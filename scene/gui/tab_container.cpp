@@ -41,6 +41,15 @@ int TabContainer::_get_tab_height() const {
 	return height;
 }
 
+int TabContainer::_get_tab_width() const {
+	int width = 0;
+	if (tabs_visible && get_tab_count() > 0) {
+		width = tab_bar->get_minimum_size().width;
+	}
+
+	return width;
+}
+
 void TabContainer::gui_input(const Ref<InputEvent> &p_event) {
 	ERR_FAIL_COND(p_event.is_null());
 
@@ -52,12 +61,19 @@ void TabContainer::gui_input(const Ref<InputEvent> &p_event) {
 		Point2 pos = mb->get_position();
 		Size2 size = get_size();
 		real_t content_height = size.height - _get_tab_height();
+		real_t content_width = size.width - _get_tab_width();
 
 		// Click must be on tabs in the tab header area.
-		if (tabs_position == POSITION_TOP && pos.y > _get_tab_height()) {
+		if (tabs_position == TabBar::POSITION_TOP && pos.y > _get_tab_height()) {
 			return;
 		}
-		if (tabs_position == POSITION_BOTTOM && pos.y < content_height) {
+		if (tabs_position == TabBar::POSITION_BOTTOM && pos.y < content_height) {
+			return;
+		}
+		if (tabs_position == TabBar::POSITION_LEFT && pos.x > _get_tab_width()) {
+			return;
+		}
+		if (tabs_position == TabBar::POSITION_RIGHT && pos.x < content_width) {
 			return;
 		}
 
@@ -71,7 +87,8 @@ void TabContainer::gui_input(const Ref<InputEvent> &p_event) {
 					popup_pos.x += size.width - popup->get_size().width;
 				}
 				popup_pos.y += _get_tab_height() / 2.0;
-				if (tabs_position == POSITION_BOTTOM) {
+				if (tabs_position == TabBar::POSITION_BOTTOM) {
+					// TODO
 					popup_pos.y += content_height;
 					popup_pos.y -= popup->get_size().height;
 					popup_pos.y -= theme_cache.menu_icon->get_height() / 2.0;
@@ -93,19 +110,31 @@ void TabContainer::gui_input(const Ref<InputEvent> &p_event) {
 		Size2 size = get_size();
 
 		// Mouse must be on tabs in the tab header area.
-		if (tabs_position == POSITION_TOP && pos.y > _get_tab_height()) {
+		if (tabs_position == TabBar::POSITION_TOP && pos.y > _get_tab_height()) {
 			if (menu_hovered) {
 				menu_hovered = false;
 				queue_redraw();
 			}
 			return;
 		}
-		if (tabs_position == POSITION_BOTTOM && pos.y < size.height - _get_tab_height()) {
+		if (tabs_position == TabBar::POSITION_BOTTOM && pos.y < size.height - _get_tab_height()) {
 			if (menu_hovered) {
 				menu_hovered = false;
 				queue_redraw();
 			}
 			return;
+		}
+		if (tabs_position == TabBar::POSITION_LEFT && pos.x > _get_tab_width()) {
+			if (menu_hovered) {
+				menu_hovered = false;
+				queue_redraw();
+			}
+		}
+		if (tabs_position == TabBar::POSITION_RIGHT && pos.x < size.width - _get_tab_width()) {
+			if (menu_hovered) {
+				menu_hovered = false;
+				queue_redraw();
+			}
 		}
 
 		if (popup) {
@@ -169,17 +198,26 @@ void TabContainer::_notification(int p_what) {
 				return;
 			}
 
-			int header_height = _get_tab_height();
-			int header_voffset = int(tabs_position == POSITION_BOTTOM) * (size.height - header_height);
+			int header_height = tabs_position == TabBar::POSITION_LEFT || tabs_position == TabBar::POSITION_RIGHT ? get_size().height : _get_tab_height();
+			int header_width = tabs_position == TabBar::POSITION_LEFT || tabs_position == TabBar::POSITION_RIGHT ? _get_tab_width() : get_size().width;
+			int header_voffset = int(tabs_position == TabBar::POSITION_BOTTOM) * (size.height - header_height);
 
 			// Draw background for the tabbar.
-			theme_cache.tabbar_style->draw(canvas, Rect2(0, header_voffset, size.width, header_height));
+			theme_cache.tabbar_style->draw(canvas, Rect2(0, header_voffset, header_width, header_height));
 			// Draw the background for the tab's content.
-			theme_cache.panel_style->draw(canvas, Rect2(0, int(tabs_position == POSITION_TOP) * header_height, size.width, size.height - header_height));
+			if (tabs_position == TabBar::POSITION_LEFT || tabs_position == TabBar::POSITION_RIGHT) {
+				theme_cache.panel_style->draw(canvas, Rect2(int(tabs_position == TabBar::POSITION_LEFT) * header_width, 0, size.width - header_width, size.height));
+			} else {
+				theme_cache.panel_style->draw(canvas, Rect2(0, int(tabs_position == TabBar::POSITION_TOP) * header_height, size.width, size.height - header_height));
+			}
 
 			// Draw the popup menu.
+			// TODO: I don't trust my edits
 			if (get_popup()) {
 				int x = is_layout_rtl() ? 0 : get_size().width - theme_cache.menu_icon->get_width();
+				if (tabs_position == TabBar::POSITION_LEFT || tabs_position == TabBar::POSITION_RIGHT) {
+					x += header_width;
+				}
 
 				if (menu_hovered) {
 					theme_cache.menu_hl_icon->draw(get_canvas_item(), Point2(x, header_voffset + (header_height - theme_cache.menu_hl_icon->get_height()) / 2));
@@ -267,14 +305,28 @@ void TabContainer::_repaint() {
 	Vector<Control *> controls = _get_tab_controls();
 	int current = get_current_tab();
 
-	// Move the TabBar to the top or bottom.
-	// Don't change the left and right offsets since the TabBar will resize and may change tab offset.
-	if (tabs_position == POSITION_BOTTOM) {
-		tab_bar->set_anchor_and_offset(SIDE_BOTTOM, 1.0, 0.0);
-		tab_bar->set_anchor_and_offset(SIDE_TOP, 1.0, -_get_tab_height());
-	} else {
-		tab_bar->set_anchor_and_offset(SIDE_BOTTOM, 0.0, _get_tab_height());
-		tab_bar->set_anchor_and_offset(SIDE_TOP, 0.0, 0.0);
+	// Don't change the left and right offsets since the TabBar will resize and may change tab offset. (TODO: Find issue PR and reimplement for vertical)
+	switch (tabs_position) {
+		case TabBar::POSITION_TOP:
+			/*tab_bar->set_anchor_and_offset(SIDE_BOTTOM, 0.0, _get_tab_height());
+			tab_bar->set_anchor_and_offset(SIDE_TOP, 0.0, 0.0);*/
+			tab_bar->set_anchors_and_offsets_preset(PRESET_TOP_WIDE);
+			break;
+		case TabBar::POSITION_BOTTOM:
+			tab_bar->set_anchors_and_offsets_preset(PRESET_BOTTOM_WIDE);
+			/*tab_bar->set_anchor_and_offset(SIDE_BOTTOM, 1.0, 0.0);
+			tab_bar->set_anchor_and_offset(SIDE_TOP, 1.0, -_get_tab_height());*/
+			break;
+		case TabBar::POSITION_LEFT:
+			tab_bar->set_anchors_and_offsets_preset(PRESET_LEFT_WIDE);
+			/*tab_bar->set_anchor_and_offset(SIDE_RIGHT, 0.0, _get_tab_width());
+			tab_bar->set_anchor_and_offset(SIDE_LEFT, 0.0, 0.0);*/
+			break;
+		case TabBar::POSITION_RIGHT:
+			tab_bar->set_anchors_and_offsets_preset(PRESET_RIGHT_WIDE);
+			/*tab_bar->set_anchor_and_offset(SIDE_RIGHT, 1.0, 0.0);
+			tab_bar->set_anchor_and_offset(SIDE_LEFT, 1.0, -_get_tab_width());*/
+			break;
 	}
 
 	updating_visibility = true;
@@ -286,10 +338,21 @@ void TabContainer::_repaint() {
 			c->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 
 			if (tabs_visible) {
-				if (tabs_position == POSITION_BOTTOM) {
-					c->set_offset(SIDE_BOTTOM, -_get_tab_height());
-				} else {
-					c->set_offset(SIDE_TOP, _get_tab_height());
+				switch (tabs_position) {
+					case TabBar::POSITION_TOP:
+						c->set_offset(SIDE_TOP, _get_tab_height());
+						break;
+					case TabBar::POSITION_BOTTOM:
+						c->set_offset(SIDE_BOTTOM, -_get_tab_height());
+						break;
+					case TabBar::POSITION_LEFT:
+						c->set_offset(SIDE_LEFT, _get_tab_width());
+						break;
+					case TabBar::POSITION_RIGHT:
+						c->set_offset(SIDE_RIGHT, -_get_tab_width());
+						break;
+					default:
+						c->set_offset(SIDE_TOP, _get_tab_height());
 				}
 			}
 
@@ -307,34 +370,40 @@ void TabContainer::_repaint() {
 }
 
 void TabContainer::_update_margins() {
-	int menu_width = theme_cache.menu_icon->get_width();
+	Side near_side = SIDE_LEFT;
+	Side far_side = SIDE_RIGHT;
+	int menu_offset = theme_cache.menu_icon->get_width();
+	if (tabs_position == TabBar::POSITION_LEFT || tabs_position == TabBar::POSITION_RIGHT) {
+		near_side = SIDE_TOP;
+		far_side = SIDE_BOTTOM;
+		menu_offset = theme_cache.menu_icon->get_height();
+	}
 
 	// Directly check for validity, to avoid errors when quitting.
 	bool has_popup = popup_obj_id.is_valid();
 
 	if (get_tab_count() == 0) {
-		tab_bar->set_offset(SIDE_LEFT, 0);
-		tab_bar->set_offset(SIDE_RIGHT, has_popup ? -menu_width : 0);
+		tab_bar->set_offset(near_side, 0);
+		tab_bar->set_offset(far_side, has_popup ? -menu_offset : 0);
 
 		return;
 	}
-
 	switch (get_tab_alignment()) {
-		case TabBar::ALIGNMENT_LEFT: {
-			tab_bar->set_offset(SIDE_LEFT, theme_cache.side_margin);
-			tab_bar->set_offset(SIDE_RIGHT, has_popup ? -menu_width : 0);
+		case TabBar::ALIGNMENT_BEGIN: {
+			tab_bar->set_offset(near_side, theme_cache.side_margin);
+			tab_bar->set_offset(far_side, has_popup ? -menu_offset : 0);
 		} break;
 
 		case TabBar::ALIGNMENT_CENTER: {
-			tab_bar->set_offset(SIDE_LEFT, 0);
-			tab_bar->set_offset(SIDE_RIGHT, has_popup ? -menu_width : 0);
+			tab_bar->set_offset(near_side, 0);
+			tab_bar->set_offset(far_side, has_popup ? -menu_offset : 0);
 		} break;
 
-		case TabBar::ALIGNMENT_RIGHT: {
-			tab_bar->set_offset(SIDE_LEFT, 0);
+		case TabBar::ALIGNMENT_END: {
+			tab_bar->set_offset(near_side, 0);
 
 			if (has_popup) {
-				tab_bar->set_offset(SIDE_RIGHT, -menu_width);
+				tab_bar->set_offset(far_side, -menu_offset);
 				return;
 			}
 
@@ -344,9 +413,9 @@ void TabContainer::_update_margins() {
 
 			// Calculate if all the tabs would still fit if the margin was present.
 			if (get_clip_tabs() && (tab_bar->get_offset_buttons_visible() || (get_tab_count() > 1 && (total_tabs_width + theme_cache.side_margin) > get_size().width))) {
-				tab_bar->set_offset(SIDE_RIGHT, has_popup ? -menu_width : 0);
+				tab_bar->set_offset(far_side, has_popup ? -menu_offset : 0);
 			} else {
-				tab_bar->set_offset(SIDE_RIGHT, -theme_cache.side_margin);
+				tab_bar->set_offset(far_side, -theme_cache.side_margin);
 			}
 		} break;
 
@@ -530,7 +599,7 @@ void TabContainer::_refresh_tab_names() {
 	Vector<Control *> controls = _get_tab_controls();
 	for (int i = 0; i < controls.size(); i++) {
 		if (!controls[i]->has_meta("_tab_name") && String(controls[i]->get_name()) != get_tab_title(i)) {
-			tab_bar->set_tab_title(i, controls[i]->get_name());
+			set_tab_title(i, controls[i]->get_name());
 		}
 	}
 }
@@ -703,20 +772,19 @@ TabBar::AlignmentMode TabContainer::get_tab_alignment() const {
 	return tab_bar->get_tab_alignment();
 }
 
-void TabContainer::set_tabs_position(TabPosition p_tabs_position) {
-	ERR_FAIL_INDEX(p_tabs_position, POSITION_MAX);
+void TabContainer::set_tabs_position(TabBar::TabPosition p_tabs_position) {
+	ERR_FAIL_INDEX(p_tabs_position, TabBar::POSITION_MAX);
 	if (p_tabs_position == tabs_position) {
 		return;
 	}
 	tabs_position = p_tabs_position;
-
-	tab_bar->set_tab_style_v_flip(tabs_position == POSITION_BOTTOM);
+	tab_bar->set_tabs_position(p_tabs_position);
 
 	callable_mp(this, &TabContainer::_repaint).call_deferred();
 	queue_redraw();
 }
 
-TabContainer::TabPosition TabContainer::get_tabs_position() const {
+TabBar::TabPosition TabContainer::get_tabs_position() const {
 	return tabs_position;
 }
 
@@ -901,7 +969,7 @@ Size2 TabContainer::get_minimum_size() const {
 			}
 
 			if (theme_cache.side_margin > 0 && get_tab_alignment() != TabBar::ALIGNMENT_CENTER &&
-					(get_tab_alignment() != TabBar::ALIGNMENT_RIGHT || !get_popup())) {
+					(get_tab_alignment() != TabBar::ALIGNMENT_END || !get_popup())) {
 				ms.x += theme_cache.side_margin;
 			}
 		}
@@ -1060,9 +1128,9 @@ void TabContainer::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("tab_button_pressed", PropertyInfo(Variant::INT, "tab")));
 	ADD_SIGNAL(MethodInfo("pre_popup_pressed"));
 
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "tab_alignment", PROPERTY_HINT_ENUM, "Left,Center,Right"), "set_tab_alignment", "get_tab_alignment");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "tab_alignment", PROPERTY_HINT_ENUM, "Begin,Center,End"), "set_tab_alignment", "get_tab_alignment");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "current_tab", PROPERTY_HINT_RANGE, "-1,4096,1"), "set_current_tab", "get_current_tab");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "tabs_position", PROPERTY_HINT_ENUM, "Top,Bottom"), "set_tabs_position", "get_tabs_position");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "tabs_position", PROPERTY_HINT_ENUM, "Top,Bottom,Left,Right"), "set_tabs_position", "get_tabs_position");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clip_tabs"), "set_clip_tabs", "get_clip_tabs");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "tabs_visible"), "set_tabs_visible", "are_tabs_visible");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "all_tabs_in_front"), "set_all_tabs_in_front", "is_all_tabs_in_front");
@@ -1071,10 +1139,6 @@ void TabContainer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_hidden_tabs_for_min_size"), "set_use_hidden_tabs_for_min_size", "get_use_hidden_tabs_for_min_size");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "tab_focus_mode", PROPERTY_HINT_ENUM, "None,Click,All"), "set_tab_focus_mode", "get_tab_focus_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "deselect_enabled"), "set_deselect_enabled", "get_deselect_enabled");
-
-	BIND_ENUM_CONSTANT(POSITION_TOP);
-	BIND_ENUM_CONSTANT(POSITION_BOTTOM);
-	BIND_ENUM_CONSTANT(POSITION_MAX);
 
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, TabContainer, side_margin);
 

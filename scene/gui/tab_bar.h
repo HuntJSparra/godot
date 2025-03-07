@@ -39,10 +39,18 @@ class TabBar : public Control {
 	GDCLASS(TabBar, Control);
 
 public:
+	enum TabPosition {
+		POSITION_TOP,
+		POSITION_BOTTOM,
+		POSITION_LEFT,
+		POSITION_RIGHT,
+		POSITION_MAX,
+	};
+
 	enum AlignmentMode {
-		ALIGNMENT_LEFT,
+		ALIGNMENT_BEGIN,
 		ALIGNMENT_CENTER,
-		ALIGNMENT_RIGHT,
+		ALIGNMENT_END,
 		ALIGNMENT_MAX,
 	};
 
@@ -70,9 +78,9 @@ private:
 		bool truncated = false;
 
 		Variant metadata;
-		int ofs_cache = 0;
-		int size_cache = 0;
-		int size_text = 0;
+		Vector2i ofs_cache = Vector2i(0, 0);
+		Vector2i size_cache = Vector2i(0, 0);
+		Vector2i size_text = Vector2i(0, 0);
 
 		Ref<Texture2D> right_button;
 		Rect2 rb_rect;
@@ -96,11 +104,11 @@ private:
 	Vector<Tab> tabs;
 	int current = -1;
 	int previous = -1;
-	AlignmentMode tab_alignment = ALIGNMENT_LEFT;
+	TabPosition tabs_position = POSITION_TOP;
+	AlignmentMode tab_alignment = ALIGNMENT_BEGIN;
 	bool clip_tabs = true;
 	int rb_hover = -1;
 	bool rb_pressing = false;
-	bool tab_style_v_flip = false;
 
 	bool select_with_rmb = false;
 	bool deselect_enabled = false;
@@ -127,6 +135,7 @@ private:
 
 	struct ThemeCache {
 		int h_separation = 0;
+		int v_separation = 0;
 		int icon_max_width = 0;
 
 		Ref<StyleBox> tab_unselected_style;
@@ -157,7 +166,10 @@ private:
 		Ref<StyleBox> button_hl_style;
 	} theme_cache;
 
+	_FORCE_INLINE_ bool _is_position_horizontal() const { return tabs_position == POSITION_TOP || tabs_position == POSITION_BOTTOM; }
+
 	int get_tab_width(int p_idx) const;
+	int get_tab_height(int p_idx) const;
 	Size2 _get_tab_icon_size(int p_idx) const;
 	void _ensure_no_over_offset();
 	bool _can_deselect() const;
@@ -168,7 +180,7 @@ private:
 	void _on_mouse_exited();
 
 	void _shape(int p_tab);
-	void _draw_tab(Ref<StyleBox> &p_tab_style, Color &p_font_color, int p_index, float p_x, bool p_focus);
+	void _draw_tab(Ref<StyleBox> &p_tab_style, Color &p_font_color, int p_index, bool p_focus);
 
 protected:
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
@@ -226,13 +238,14 @@ public:
 
 	int get_tab_idx_at_point(const Point2 &p_point) const;
 
+	void set_tabs_position(TabPosition p_tabs_position);
+	TabPosition get_tabs_position() const;
+
 	void set_tab_alignment(AlignmentMode p_alignment);
 	AlignmentMode get_tab_alignment() const;
 
 	void set_clip_tabs(bool p_clip_tabs);
 	bool get_clip_tabs() const;
-
-	void set_tab_style_v_flip(bool p_tab_style_v_flip);
 
 	void move_tab(int p_from, int p_to);
 
@@ -286,6 +299,7 @@ public:
 	TabBar();
 };
 
+VARIANT_ENUM_CAST(TabBar::TabPosition);
 VARIANT_ENUM_CAST(TabBar::AlignmentMode);
 VARIANT_ENUM_CAST(TabBar::CloseButtonDisplayPolicy);
 
